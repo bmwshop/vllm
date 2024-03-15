@@ -94,7 +94,7 @@ class RotaryEmbedding(nn.Module):
         """Compute the cos and sin cache."""
         inv_freq = self._compute_inv_freq(self.base)
         t = torch.arange(self.max_position_embeddings, dtype=torch.float)
-        pi_factor = os.getenv('PI_FACTOR')
+        pi_factor = float(os.getenv('PI_FACTOR'))
         if pi_factor:
             t *= 1 / pi_factor
 
