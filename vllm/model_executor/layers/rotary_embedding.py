@@ -29,7 +29,7 @@ import torch.nn as nn
 
 from vllm._C import ops
 
-import os
+import os, json
 
 
 def _rotate_neox(x: torch.Tensor) -> torch.Tensor:
@@ -82,8 +82,9 @@ class RotaryEmbedding(nn.Module):
         # Dima: get them from env if avail
         lambdas = os.getenv('WAVELENGTHS')
         if lambdas:
+            lambdas = json.loads(lambdas)
             wavelengths = torch.tensor(lambdas, dtype=torch.float, device=torch.cuda.current_device())
-            self.inv_freq = 2 * math.pi / wavelengths
+            inv_freq = 2 * math.pi / wavelengths
             print(f'using passed in wavelengths {lambdas}')
         else:
             inv_freq = 1.0 / (base**(torch.arange(
