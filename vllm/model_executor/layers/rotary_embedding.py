@@ -94,6 +94,12 @@ class RotaryEmbedding(CustomOp):
         self.is_neox_style = is_neox_style
         self.dtype = dtype
 
+        # Dima: read the scaling factor from env
+        self.mscale = float(os.getenv('MSCALE', 1.0))
+        # instead of applying to query only, we sqrt and apply to both.
+        print(f'using mscale: {self.mscale}')
+        self.mscale = math.sqrt(self.mscale)
+
         cache = self._compute_cos_sin_cache()
         cache = cache.to(dtype)
         self.cos_sin_cache: torch.Tensor
@@ -127,8 +133,9 @@ class RotaryEmbedding(CustomOp):
             t *= 1 / float(pi_factor)
 
         freqs = torch.einsum("i,j -> ij", t, inv_freq)
-        cos = freqs.cos()
-        sin = freqs.sin()
+        # Dima: apply mscale
+        cos = freqs.cos() * self.mscale
+        sin = freqs.sin() * self.mscale
         cache = torch.cat((cos, sin), dim=-1)
         return cache
 
