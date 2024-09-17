@@ -301,7 +301,20 @@ class NemotronAttention(nn.Module):
             # logger.info(f'attn_output: {attn_output.shape}')           
         else:
             q, k = self.rotary_emb(positions, q, k)
-            logger.info(f'q: {q.shape}, k: {k.shape}, v: {v.shape}, kv_cache: {kv_cache.shape}, positions: {positions.shape}, attn_metadata: {attn_metadata}')
+            if q:
+                logger.info(f'q: {q.shape}')
+            if k:
+                logger.info(f'k: {k.shape}')
+            if v:
+                logger.info(f'v: {v.shape}')
+            if kv_cache:
+                logger.info(f'kv_cache: {kv_cache.shape}')
+            if positions:
+                logger.info(f'positions: {positions.shape}')
+            if attn_metadata:
+                logger.info(f'attn_metadata: {attn_metadata}')
+                    
+            # logger.info(f'q: {q.shape}, k: {k.shape}, v: {v.shape}, kv_cache: {kv_cache.shape}, positions: {positions.shape}, attn_metadata: {attn_metadata}')
             attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
             logger.info(f'attn_output: {attn_output.shape}')
         output, _ = self.o_proj(attn_output)
