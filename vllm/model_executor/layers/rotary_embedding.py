@@ -95,10 +95,12 @@ class RotaryEmbedding(CustomOp):
         self.dtype = dtype
 
         # Dima: read the scaling factor from env
-        self.mscale = float(os.getenv('MSCALE', 1.0))
+        # for now, this is moved into nemotron class.
+        self.mscale = 1
+        ## self.mscale = float(os.getenv('MSCALE', 1.0))
         # instead of applying to query only, we sqrt and apply to both.
-        print(f'using mscale: {self.mscale}')
-        self.mscale = math.sqrt(self.mscale)
+        ## print(f'using mscale: {self.mscale}')
+        ## self.mscale = math.sqrt(self.mscale)
 
         cache = self._compute_cos_sin_cache()
         cache = cache.to(dtype)

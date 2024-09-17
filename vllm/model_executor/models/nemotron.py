@@ -49,6 +49,33 @@ from vllm.transformers_utils.configs import NemotronConfig
 from .interfaces import SupportsLoRA
 from .utils import PPMissingLayer, is_pp_missing_parameter, make_layers
 
+# Dima in order to add window to local attention
+from vllm.config import CacheConfig
+
+# Dima in order to clone CacheConfig if it exists
+import copy 
+
+# Dima for debugging purposes
+import os
+from vllm.logger import init_logger
+logger = init_logger(__name__)
+
+# https://github.com/datamllab/LongLM stuff
+GROUP_SIZE =  os.getenv('GROUP_SIZE')
+if GROUP_SIZE:
+    GROUP_SIZE = int(GROUP_SIZE)
+    logger.info(f'GROUP_SIZE: {GROUP_SIZE}')
+
+WINDOW_SIZE = os.getenv('WINDOW_SIZE')
+if WINDOW_SIZE:
+    WINDOW_SIZE = int(WINDOW_SIZE)
+    logger.info(f'WINDOW_SIZE: {WINDOW_SIZE}')
+
+MSCALE = os.getenv('MSCALE')
+if MSCALE:
+    MSCALE = float(MSCALE)
+    logger.info(f'MSCALE: {MSCALE}')
+
 # The architecture is pretty similar to Llama, with these changes:
 # - There is no gate_proj, just up_proj
 # - Normal LayerNorm (with a +1 to the weights) instead of RMSNorm
@@ -74,7 +101,7 @@ class NemotronLayerNorm1P(nn.LayerNorm):
                  device=None,
                  dtype=None):
         super().__init__(normalized_shape, eps, elementwise_affine, bias,
-                         device, dtype)
+                         device, dtype) 
 
     def forward(
         self,
@@ -160,6 +187,8 @@ class NemotronAttention(nn.Module):
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
         self.scaling = self.head_dim**-0.5
+        # Dima: maybe apply mscale here instead of inside rope directly
+        self.scaling = self.scaling * MSCALE**0.5
         self.rope_theta = rope_theta
         self.partial_rotary_factor = config.partial_rotary_factor
         self.max_position_embeddings = max_position_embeddings
@@ -189,7 +218,42 @@ class NemotronAttention(nn.Module):
             rope_scaling=rope_scaling,
             partial_rotary_factor=self.partial_rotary_factor,
         )
-        self.attn = Attention(self.num_heads,
+
+        if GROUP_SIZE and WINDOW_SIZE:
+            logger.info(f'using a combination of local and group attention')
+            # does scaling need to be applied equally to local and group attention?
+            # maybe yes because we are mixing the scores ?
+
+            if cache_config is not None:
+                logger.info(f'cache_config: {cache_config}')
+                local_cache_config = copy.deepcopy(cache_config)
+                cache_config.sliding_window = [-WINDOW_SIZE,0]
+            else:
+                # need to check what gpu mem and swap space ought to be set to.. 
+                local_cache_config = CacheConfig(block_size = 16,
+                              cache_dtype = "auto",
+                              sliding_window = [-WINDOW_SIZE,0],
+                              gpu_memory_utilization = 0.95,
+                              swap_space = 0)
+                
+            # Dima: I hope these two attentions don't double our memory requirement
+            self.attn_local = Attention(self.num_heads,
+                              self.head_dim,
+                              self.scaling,
+                              num_kv_heads=self.num_kv_heads,
+                              cache_config=local_cache_config, # Dima
+                              quant_config=quant_config)
+            
+            self.attn_group = Attention(self.num_heads,
+                              self.head_dim,
+                              self.scaling,
+                              num_kv_heads=self.num_kv_heads,
+                              cache_config=cache_config,
+                              quant_config=quant_config)
+            
+        else:
+            logger.info(f'using regular full attention')
+            self.attn = Attention(self.num_heads,
                               self.head_dim,
                               self.scaling,
                               num_kv_heads=self.num_kv_heads,
@@ -205,8 +269,41 @@ class NemotronAttention(nn.Module):
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
-        q, k = self.rotary_emb(positions, q, k)
-        attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
+        if GROUP_SIZE and WINDOW_SIZE:
+
+            # local computation is unchanged with the exception of the window in attn_local
+            q_local, k_local = self.rotary_emb(positions, q, k)
+            # logger.info(f'q: {q.shape}, k: {k.shape}, v: {v.shape}, kv_cache: {kv_cache.shape}, positions: {positions.shape}, attn_metadata: {attn_metadata}')
+
+            # do we need to worry about the values v here?
+            attn_output_local = self.attn_local(q_local, k_local, v, kv_cache, attn_metadata)
+
+            # global computation is 
+            positions_group = positions // GROUP_SIZE + WINDOW_SIZE # or something like that
+            q_group, k_group = self.rotary_emb(positions_group, q_group, k_group)
+            # logger.info(f'q: {q.shape}, k: {k.shape}, v: {v.shape}, kv_cache: {kv_cache.shape}, positions: {positions.shape}, attn_metadata: {attn_metadata}')
+
+            # do we need to worry about the values v here?
+            attn_output_group = self.attn_group(q_group, k_group, v, kv_cache, attn_metadata)
+
+            # need to deal with paddings, also normalization?
+
+            # normalize?
+            # attn_output_local[:, -true_neighbor_seq_max_length:, ...] = (attn_output_local[:, -true_neighbor_seq_max_length:, ...] * neighbor_softmax_lse)
+            # attn_output_group[:, -true_group_seq_max_length:, ...] = (attn_output_group[:, -true_group_seq_max_length:, ...] * group_softmax_lse)
+
+            # need to funky combine the attention score here. local == local, the rest is group.
+            attn_output = torch.empty_like(attn_output_local).copy_(attn_output_local)  # might be slightly faster than clone
+            # group_size_2-kv_seq_len ?
+            attn_output[:, WINDOW_SIZE:, ...] += attn_output_group
+
+
+            # logger.info(f'attn_output: {attn_output.shape}')           
+        else:
+            q, k = self.rotary_emb(positions, q, k)
+            logger.info(f'q: {q.shape}, k: {k.shape}, v: {v.shape}, kv_cache: {kv_cache.shape}, positions: {positions.shape}, attn_metadata: {attn_metadata}')
+            attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
+            logger.info(f'attn_output: {attn_output.shape}')
         output, _ = self.o_proj(attn_output)
         return output
 
