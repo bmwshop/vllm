@@ -301,17 +301,17 @@ class NemotronAttention(nn.Module):
             # logger.info(f'attn_output: {attn_output.shape}')           
         else:
             q, k = self.rotary_emb(positions, q, k)
-            if q:
+            if q is not None:
                 logger.info(f'q: {q.shape}')
-            if k:
+            if k is not None:
                 logger.info(f'k: {k.shape}')
-            if v:
+            if v is not None:
                 logger.info(f'v: {v.shape}')
-            if kv_cache:
+            if kv_cache is not None:
                 logger.info(f'kv_cache: {kv_cache.shape}')
-            if positions:
+            if positions is not None:
                 logger.info(f'positions: {positions.shape}')
-            if attn_metadata:
+            if attn_metadata is not None:
                 logger.info(f'attn_metadata: {attn_metadata}')
                     
             # logger.info(f'q: {q.shape}, k: {k.shape}, v: {v.shape}, kv_cache: {kv_cache.shape}, positions: {positions.shape}, attn_metadata: {attn_metadata}')
