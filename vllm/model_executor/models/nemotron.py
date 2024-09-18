@@ -188,6 +188,8 @@ class NemotronAttention(nn.Module):
         self.kv_size = self.num_kv_heads * self.head_dim
         self.scaling = self.head_dim**-0.5
         # Dima: maybe apply mscale here instead of inside rope directly
+        if self.scaling is None:
+            self.scaling =  1.0
         self.scaling = self.scaling * MSCALE**0.5
         self.rope_theta = rope_theta
         self.partial_rotary_factor = config.partial_rotary_factor
