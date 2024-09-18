@@ -303,22 +303,22 @@ class NemotronAttention(nn.Module):
             # logger.info(f'attn_output: {attn_output.shape}')           
         else:
             q, k = self.rotary_emb(positions, q, k)
-            if q is not None:
-                logger.info(f'q: {q.shape}')
-            if k is not None:
-                logger.info(f'k: {k.shape}')
-            if v is not None:
-                logger.info(f'v: {v.shape}')
-            if kv_cache is not None:
-                logger.info(f'kv_cache: {kv_cache.shape}')
-            if positions is not None:
-                logger.info(f'positions: {positions.shape}')
-            if attn_metadata is not None:
-                logger.info(f'attn_metadata: {attn_metadata}')
+            # if q is not None:
+            #    logger.info(f'q: {q.shape}')
+            #if k is not None:
+            #    logger.info(f'k: {k.shape}')
+            #if v is not None:
+            #    logger.info(f'v: {v.shape}')
+            #if kv_cache is not None:
+            #    logger.info(f'kv_cache: {kv_cache.shape}')
+            #if positions is not None:
+            #    logger.info(f'positions: {positions.shape}')
+            #if attn_metadata is not None:
+            #    logger.info(f'attn_metadata: {attn_metadata}')
                     
             # logger.info(f'q: {q.shape}, k: {k.shape}, v: {v.shape}, kv_cache: {kv_cache.shape}, positions: {positions.shape}, attn_metadata: {attn_metadata}')
             attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
-            logger.info(f'attn_output: {attn_output.shape}')
+            #logger.info(f'attn_output: {attn_output.shape}')
         output, _ = self.o_proj(attn_output)
         return output
 
