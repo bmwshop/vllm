@@ -98,6 +98,14 @@ class NemotronConfig(PretrainedConfig):
         mlp_bias (`bool`, *optional*, defaults to `False`):
             Whether to use a bias in up_proj and down_proj layers in the MLP
             layers.
+        mscale (`float`, *optional*, defaults to 1.0):
+            mscaling factor to multiply the queries by.
+        se_group (`int`, *optional*, defaults to None):
+            Self-Extend group size.
+        se_window (`int`, *optional*, defaults to None):
+            Self-Extend window size.
+        layernorm_type (`str`, *optional*, defaults to `layernorm1p`):
+            Type of layernorm. `layernorm1p` or `rmsnorm`.
 
     ```python
     >>> from transformers import NemotronModel, NemotronConfig
@@ -136,6 +144,10 @@ class NemotronConfig(PretrainedConfig):
         attention_bias=False,
         attention_dropout=0.0,
         mlp_bias=False,
+        mscale=1.0,
+        se_group=None,
+        se_window=None,
+        layernorm_type="layernorm1p",
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -167,6 +179,13 @@ class NemotronConfig(PretrainedConfig):
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.mlp_bias = mlp_bias
+
+        # D.R. adding these
+        self.mscale = mscale
+        self.se_group = se_group
+        self.se_window = se_window
+        self.layernorm_type = layernorm_type
+        assert self.layernorm_type in {'layernorm1p', 'rmsnorm'}, f'invalid value for layernorm_type {self.layernorm_type}'
 
         super().__init__(
             pad_token_id=pad_token_id,

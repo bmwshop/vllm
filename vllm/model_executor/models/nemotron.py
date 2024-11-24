@@ -49,6 +49,9 @@ from vllm.transformers_utils.configs import NemotronConfig
 from .interfaces import SupportsLoRA
 from .utils import PPMissingLayer, is_pp_missing_parameter, make_layers
 
+# Dima to add the usual RMS Norm
+from vllm.model_executor.layers.layernorm import RMSNorm
+
 # Dima in order to add window to local attention
 from vllm.config import CacheConfig
 
@@ -271,22 +274,43 @@ class NemotronAttention(nn.Module):
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
-        if GROUP_SIZE and WINDOW_SIZE:
+        # if GROUP_SIZE and WINDOW_SIZE:
 
+            # likely, this needs to be validated.. 
+            # bsz, q_len, _ = hidden_states.size()
+            # kv_seq_len = k.shape[-2]
+
+            # the crazy paper implementation
+            # query_positions = positions
+            # key_positions = positions
+            # if q_len != 1:
+            #     key_positions = positions 
+            # else: 
+            #     key_positions = torch.arange(kv_seq_len, dtype=positions.dtype).to(query_positions.device).view(1, kv_seq_len) # only consider bsz=1 for now.
+
+            # below is okay if q_len != 1 but if it is one we need to use key_positions
             # local computation is unchanged with the exception of the window in attn_local
-            q_local, k_local = self.rotary_emb(positions, q, k)
+            # q_local, k_local = self.rotary_emb(positions, q, k)
             # logger.info(f'q: {q.shape}, k: {k.shape}, v: {v.shape}, kv_cache: {kv_cache.shape}, positions: {positions.shape}, attn_metadata: {attn_metadata}')
 
-            # do we need to worry about the values v here?
-            attn_output_local = self.attn_local(q_local, k_local, v, kv_cache, attn_metadata)
+            # do we need to worry about the values v here? probably not?
+            # attn_output_local = self.attn_local(q_local, k_local, v, kv_cache, attn_metadata)
 
-            # global computation is 
-            positions_group = positions // GROUP_SIZE + WINDOW_SIZE # or something like that
-            q_group, k_group = self.rotary_emb(positions_group, q_group, k_group)
+            # positions_group = positions // GROUP_SIZE + WINDOW_SIZE - WINDOW_SIZE // GROUP_SIZE # or something like that
+
+            # _re_group_size_2 = 0 if positions.max() < WINDOW_SIZE else WINDOW_SIZE # in case that, the smallest q position, g2-g2//g1 exceed the max position
+            # positions_group = positions // GROUP_SIZE + _re_group_size_2 - _re_group_size_2 / GROUP_SIZE
+
+            # group_query_positions = query_positions // GROUP_SIZE + _re_group_size_2 - _re_group_size_2 / GROUP_SIZE
+            # group_key_positions = key_positions // GROUP_SIZE
+            # done with the crazy paper implementation
+
+            # need to adapt the blow to different query / key positions?
+            # q_group, k_group = self.rotary_emb(positions_group, q, k)
             # logger.info(f'q: {q.shape}, k: {k.shape}, v: {v.shape}, kv_cache: {kv_cache.shape}, positions: {positions.shape}, attn_metadata: {attn_metadata}')
 
-            # do we need to worry about the values v here?
-            attn_output_group = self.attn_group(q_group, k_group, v, kv_cache, attn_metadata)
+ 
+            # attn_output_group = self.attn_group(q_group, k_group, v, kv_cache, attn_metadata)
 
             # need to deal with paddings, also normalization?
 
@@ -295,13 +319,14 @@ class NemotronAttention(nn.Module):
             # attn_output_group[:, -true_group_seq_max_length:, ...] = (attn_output_group[:, -true_group_seq_max_length:, ...] * group_softmax_lse)
 
             # need to funky combine the attention score here. local == local, the rest is group.
-            attn_output = torch.empty_like(attn_output_local).copy_(attn_output_local)  # might be slightly faster than clone
+            # attn_output = torch.empty_like(attn_output_local).copy_(attn_output_local)  # might be slightly faster than clone
             # group_size_2-kv_seq_len ?
-            attn_output[:, WINDOW_SIZE:, ...] += attn_output_group
+            # attn_output[:, WINDOW_SIZE:, ...] += attn_output_group
 
 
             # logger.info(f'attn_output: {attn_output.shape}')           
-        else:
+        # else:
+        if True:
             q, k = self.rotary_emb(positions, q, k)
             # if q is not None:
             #    logger.info(f'q: {q.shape}')
@@ -368,10 +393,16 @@ class NemotronDecoderLayer(nn.Module):
             bias=getattr(config, "mlp_bias", False),
             prefix=f"{prefix}.mlp",
         )
-        self.input_layernorm = NemotronLayerNorm1P(config.hidden_size,
-                                                   eps=config.norm_eps)
-        self.post_attention_layernorm = NemotronLayerNorm1P(
-            config.hidden_size, eps=config.norm_eps)
+
+        # D.R. this should be already validated before
+        if getattr(config, "layernorm_type") == 'layernorm1p':
+            logger.info(f'layernorm_type: layernorm1p') 
+            self.input_layernorm = NemotronLayerNorm1P(config.hidden_size, eps=config.norm_eps)
+            self.post_attention_layernorm = NemotronLayerNorm1P(config.hidden_size, eps=config.norm_eps)
+        else:
+            logger.info(f'layernorm_type: rmsnorm') 
+            self.input_layernorm = RMSNorm(config.hidden_size, eps=config.norm_eps)
+            self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.norm_eps)
 
     def forward(
         self,
