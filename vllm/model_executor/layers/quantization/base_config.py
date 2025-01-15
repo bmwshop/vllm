@@ -134,10 +134,5 @@ class QuantizationConfig(ABC):
         """
         raise NotImplementedError
 
-    @abstractmethod
-    def get_scaled_act_names(self) -> List[str]:
-        """Returns the activation function names that should be post-scaled.
-
-        For now, this is only used by AWQ.
-        """
-        raise NotImplementedError
+    def get_cache_scale(self, name: str) -> Optional[str]:
+        return None

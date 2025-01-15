@@ -12,11 +12,11 @@ import torch
 
 from vllm import SamplingParams
 from vllm.config import ParallelConfig
+from vllm.distributed import cleanup_dist_env_and_memory
 from vllm.engine.async_llm_engine import AsyncEngineArgs, AsyncLLMEngine
 from vllm.outputs import RequestOutput as RealRequestOutput
 from vllm.sampling_params import RequestOutputKind
 
-from ..conftest import cleanup
 from ..utils import wait_for_gpu_memory_to_clear
 
 
@@ -24,6 +24,11 @@ from ..utils import wait_for_gpu_memory_to_clear
 class RequestOutput:
     request_id: int
     finished: bool = False
+
+
+@dataclass
+class MockModelConfig:
+    use_async_output_proc = True
 
 
 class MockEngine:
@@ -35,6 +40,7 @@ class MockEngine:
         self.request_id = None
         # Ugly, remove dependency when possible
         self.parallel_config = ParallelConfig(1, 1, False)
+        self.model_config = MockModelConfig()
 
     async def step_async(self, virtual_engine):
         # PP size is 1, ignore virtual engine
@@ -80,17 +86,19 @@ class MockAsyncLLMEngine(AsyncLLMEngine):
 
 @pytest.mark.asyncio
 async def test_new_requests_event():
-    engine = MockAsyncLLMEngine(worker_use_ray=False)
+    params = SamplingParams()
+
+    engine = MockAsyncLLMEngine()
     engine.start_background_loop()
     await asyncio.sleep(0.01)
     assert engine.engine.step_calls == 0
 
-    await engine.add_request("1", "", None)
+    await engine.add_request("1", "", params)
     await asyncio.sleep(0.01)
     assert engine.engine.add_request_calls == 1
     assert engine.engine.step_calls == 1
 
-    await engine.add_request("2", "", None)
+    await engine.add_request("2", "", params)
     engine.engine.generate("2")
     await asyncio.sleep(0)
     await asyncio.sleep(0)
@@ -105,7 +113,7 @@ async def test_new_requests_event():
     await asyncio.sleep(0.001)
     assert engine.engine.step_calls == old_step_calls
 
-    await engine.add_request("3", "", None)
+    await engine.add_request("3", "", params)
     await asyncio.sleep(0.01)
     assert engine.engine.add_request_calls == 3
     assert engine.engine.step_calls == old_step_calls + 1
@@ -113,7 +121,7 @@ async def test_new_requests_event():
     assert engine.engine.add_request_calls == 3
     assert engine.engine.step_calls == old_step_calls + 1
 
-    engine = MockAsyncLLMEngine(worker_use_ray=True)
+    engine = MockAsyncLLMEngine()
     assert engine.get_model_config() is not None
     assert engine.get_tokenizer() is not None
     assert engine.get_decoding_config() is not None
@@ -149,7 +157,7 @@ async def async_engine():
         engine.shutdown_background_loop()
         del engine
         await asyncio.sleep(0.1)
-        cleanup()
+        cleanup_dist_env_and_memory()
 
 
 @pytest.fixture()

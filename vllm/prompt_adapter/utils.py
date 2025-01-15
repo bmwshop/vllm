@@ -8,13 +8,15 @@ from huggingface_hub import file_exists, hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
 from safetensors.torch import load_file as safe_load_file
 
+from vllm.platforms import current_platform
+
 WEIGHTS_NAME = "adapter_model.bin"
 SAFETENSORS_WEIGHTS_NAME = "adapter_model.safetensors"
 
 
 # Get current device name based on available devices
 def infer_device() -> str:
-    if torch.cuda.is_available():
+    if current_platform.is_cuda_alike():
         return "cuda"
     return "cpu"
 
@@ -35,9 +37,8 @@ def load_peft_weights(model_id: str,
             Additional arguments to pass to the `hf_hub_download` method when 
             loading from the HuggingFace Hub.
     """
-    path = (os.path.join(model_id, hf_hub_download_kwargs["subfolder"])
-            if hf_hub_download_kwargs.get("subfolder", None) is not None else
-            model_id)
+    path = (os.path.join(model_id, hf_hub_download_kwargs["subfolder"]) if
+            hf_hub_download_kwargs.get("subfolder") is not None else model_id)
 
     if device is None:
         device = infer_device()
@@ -49,19 +50,19 @@ def load_peft_weights(model_id: str,
         filename = os.path.join(path, WEIGHTS_NAME)
         use_safetensors = False
     else:
-        token = hf_hub_download_kwargs.get("token", None)
+        token = hf_hub_download_kwargs.get("token")
         if token is None:
-            token = hf_hub_download_kwargs.get("use_auth_token", None)
+            token = hf_hub_download_kwargs.get("use_auth_token")
 
         hub_filename = (os.path.join(hf_hub_download_kwargs["subfolder"],
                                      SAFETENSORS_WEIGHTS_NAME)
-                        if hf_hub_download_kwargs.get("subfolder", None)
-                        is not None else SAFETENSORS_WEIGHTS_NAME)
+                        if hf_hub_download_kwargs.get("subfolder") is not None
+                        else SAFETENSORS_WEIGHTS_NAME)
         has_remote_safetensors_file = file_exists(
             repo_id=model_id,
             filename=hub_filename,
-            revision=hf_hub_download_kwargs.get("revision", None),
-            repo_type=hf_hub_download_kwargs.get("repo_type", None),
+            revision=hf_hub_download_kwargs.get("revision"),
+            repo_type=hf_hub_download_kwargs.get("repo_type"),
             token=token,
         )
         use_safetensors = has_remote_safetensors_file

@@ -9,7 +9,14 @@ std::string init_cpu_threads_env(const std::string& cpu_ids);
 void int8_scaled_mm(torch::Tensor& c, const torch::Tensor& a,
                     const torch::Tensor& b, const torch::Tensor& a_scales,
                     const torch::Tensor& b_scales,
-                    const c10::optional<torch::Tensor>& bias);
+                    const std::optional<torch::Tensor>& bias);
+
+void int8_scaled_mm_azp(torch::Tensor& c, const torch::Tensor& a,
+                        const torch::Tensor& b, const torch::Tensor& a_scales,
+                        const torch::Tensor& b_scales,
+                        const torch::Tensor& azp_adj,
+                        const std::optional<torch::Tensor>& azp,
+                        const std::optional<torch::Tensor>& bias);
 
 TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
   // vLLM custom ops
@@ -94,13 +101,14 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
 #ifdef __AVX512F__
   // Compute int8 quantized tensor for given scaling factor.
   ops.def(
-      "static_scaled_int8_quant(Tensor! out, Tensor input, Tensor scale) -> "
-      "()");
+      "static_scaled_int8_quant(Tensor! out, Tensor input, Tensor scale,"
+      "Tensor? azp) -> ()");
   ops.impl("static_scaled_int8_quant", torch::kCPU, &static_scaled_int8_quant);
+
   // Compute int8 quantized tensor and scaling factor
   ops.def(
-      "dynamic_scaled_int8_quant(Tensor! out, Tensor input, Tensor! scale) -> "
-      "()");
+      "dynamic_scaled_int8_quant(Tensor! out, Tensor input, Tensor! scale, "
+      "Tensor!? azp) -> ()");
   ops.impl("dynamic_scaled_int8_quant", torch::kCPU,
            &dynamic_scaled_int8_quant);
   // W8A8 GEMM, supporting symmetric per-tensor or per-row/column
@@ -110,6 +118,14 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
       "                  Tensor b, Tensor a_scales,"
       "                  Tensor b_scales, Tensor? bias) -> ()");
   ops.impl("cutlass_scaled_mm", torch::kCPU, &int8_scaled_mm);
+  // w8a8 GEMM, supporting asymmetric per-tensor or per-row/column
+  // quantization.
+  ops.def(
+      "cutlass_scaled_mm_azp(Tensor! out, Tensor a,"
+      "                  Tensor b, Tensor a_scales,"
+      "                  Tensor b_scales, Tensor azp_adj,"
+      "                  Tensor? azp, Tensor? bias) -> ()");
+  ops.impl("cutlass_scaled_mm_azp", torch::kCPU, &int8_scaled_mm_azp);
 #endif
 }
 
