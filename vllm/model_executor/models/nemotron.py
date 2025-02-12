@@ -381,7 +381,7 @@ class NemotronAttention(nn.Module):
             # position - independent scaling factor
             logger.info(f'applying static MSCALE: {mscale}, q shape: {q.shape}, positions shape: {positions.shape}')
             if positions.numel() == 1: 
-                logger.info('positions: {positions.cpu().item()}')
+                logger.info(f'positions: {positions.cpu().item()}')
 
             return q * mscale 
         else: # mscale is a formula
