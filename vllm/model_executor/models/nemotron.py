@@ -352,10 +352,10 @@ class NemotronAttention(nn.Module):
         q = self.apply_mscale_if_needed(q, positions, MSCALE)
  
         q, k = self.rotary_emb(positions, q, k)
-        if q is not None:
-            logger.info(f'q: {q.shape}')
-        if k is not None:
-            logger.info(f'k: {k.shape}')
+        # if q is not None:
+        #     logger.info(f'q: {q.shape}')
+        # if k is not None:
+        #     logger.info(f'k: {k.shape}')
 
 
         # if v is not None:
@@ -379,7 +379,7 @@ class NemotronAttention(nn.Module):
         
         if isinstance(mscale, float): 
             # position - independent scaling factor
-            logger.info(f'applying static MSCALE: {mscale}')
+            logger.info(f'applying static MSCALE: {mscale}, q shape: {q.shape}, positions shape: {positions.shape}')
             return q * mscale 
         else: # mscale is a formula
             logger.info(f'positions shape: {positions.shape}')
