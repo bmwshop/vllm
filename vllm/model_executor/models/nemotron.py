@@ -373,7 +373,7 @@ class NemotronAttention(nn.Module):
         output, _ = self.o_proj(attn_output)
         return output
     
-    def apply_mscale_if_needed(q, positions, mscale) -> torch.Tensor:
+    def apply_mscale_if_needed(self, q, positions, mscale) -> torch.Tensor:
         if mscale is None:
             return q
         
