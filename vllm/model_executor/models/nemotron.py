@@ -510,8 +510,13 @@ class NemotronModel(nn.Module):
                                                 prefix=prefix),
             prefix=f"{prefix}.layers")
         if get_pp_group().is_last_rank:
-            self.norm = NemotronLayerNorm1P(config.hidden_size,
-                                            eps=config.norm_eps)
+            if getattr(config, "layernorm_type") == 'layernorm1p':
+                logger.info(f'norm_type: layernorm1p') 
+                self.norm = NemotronLayerNorm1P(config.hidden_size, eps=config.norm_eps)
+            else:
+                logger.info(f'layernorm_type: rmsnorm') 
+                self.norm = RMSNorm(config.hidden_size, eps=config.norm_eps)
+                
         else:
             self.norm = PPMissingLayer()
         self.make_empty_intermediate_tensors = (
