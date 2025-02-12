@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -22,7 +24,7 @@ class DummyWorkerWrapper(WorkerWrapperBase):
             # simulate error case
             raise worker_input
 
-        return self.rank, input
+        return self.rpc_rank, input
 
 
 def _start_workers() -> Tuple[List[ProcessWorkerWrapper], WorkerMonitor]:

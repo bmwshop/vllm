@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 # Adapted from
 # https://github.com/huggingface/transformers/blob/v4.28.0/src/transformers/models/gptj/modeling_gptj.py
 # Copyright 2023 The vLLM team.
@@ -316,8 +318,7 @@ class GPTJForCausalLM(nn.Module, SupportsPP):
 
             if (self.quant_config is not None and
                 (scale_name := self.quant_config.get_cache_scale(name))):
-                # Loading kv cache scales for quark and
-                # compressed-tensors quantization
+                # Loading kv cache quantization scales
                 param = params_dict[scale_name]
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
