@@ -64,21 +64,44 @@ import os
 from vllm.logger import init_logger
 logger = init_logger(__name__)
 
+from sympy import sympify, lambdify
+
 # https://github.com/datamllab/LongLM stuff
 GROUP_SIZE =  os.getenv('GROUP_SIZE')
 if GROUP_SIZE:
-    GROUP_SIZE = int(GROUP_SIZE)
-    logger.info(f'GROUP_SIZE: {GROUP_SIZE}')
+    try:
+        GROUP_SIZE = int(GROUP_SIZE)
+        logger.info(f'GROUP_SIZE: {GROUP_SIZE}')
+    except ValueError:
+        logger.info(f'failed to parse GROUP_SIZE: {GROUP_SIZE}, setting to None')
+        GROUP_SIZE = None
 
 WINDOW_SIZE = os.getenv('WINDOW_SIZE')
 if WINDOW_SIZE:
-    WINDOW_SIZE = int(WINDOW_SIZE)
-    logger.info(f'WINDOW_SIZE: {WINDOW_SIZE}')
+    try:
+        WINDOW_SIZE = int(WINDOW_SIZE)
+        logger.info(f'WINDOW_SIZE: {WINDOW_SIZE}')
+    except ValueError:
+        logger.info(f'failed to parse GROUP_SIZE: {WINDOW_SIZE}, setting to None')
+        WINDOW_SIZE = None
 
+
+# maybe check for a formula here?
 MSCALE = os.getenv('MSCALE')
 if MSCALE:
-    MSCALE = float(MSCALE)
-    logger.info(f'MSCALE: {MSCALE}')
+    try:  # is it a float?
+        MSCALE = float(MSCALE)
+        logger.info(f'MSCALE parsed as a float: {MSCALE}')
+    except ValueError:   
+        try:
+            MSCALE = sympify(MSCALE)
+            logger.info(f'MSCALE parsed as a sympy formula: {MSCALE}')
+        except SympifyError:
+            logger.error(f'invalid formula {MSCALE}, setting to None')
+            MSCALE = None
+        except Exception as e:
+            logger.info(f'failed to parse MSCALE: {MSCALE}, setting to None')
+            MSCALE = None
 
 # The architecture is pretty similar to Llama, with these changes:
 # - There is no gate_proj, just up_proj
@@ -191,13 +214,6 @@ class NemotronAttention(nn.Module):
         self.q_size = self.num_heads * self.head_dim
         self.kv_size = self.num_kv_heads * self.head_dim
         self.scaling = self.head_dim**-0.5
-        # Dima: maybe apply mscale here instead of inside rope directly
-        if self.scaling is None:
-            self.scaling =  1.0
-        if MSCALE:
-            # self.scaling = self.scaling * MSCALE**0.5
-            logger.info(f'applying MSCALE: {MSCALE}')
-            self.scaling = self.scaling * MSCALE
         self.rope_theta = rope_theta
         self.partial_rotary_factor = config.partial_rotary_factor
         self.max_position_embeddings = max_position_embeddings
@@ -228,47 +244,47 @@ class NemotronAttention(nn.Module):
             partial_rotary_factor=self.partial_rotary_factor,
         )
 
-        if GROUP_SIZE and WINDOW_SIZE:
-            logger.info(f'using a combination of local and group attention')
-            # does scaling need to be applied equally to local and group attention?
-            # maybe yes because we are mixing the scores ?
-
-            if cache_config is not None:
-                logger.info(f'cache_config: {cache_config}')
-                local_cache_config = copy.deepcopy(cache_config)
-                cache_config.sliding_window = [-WINDOW_SIZE,0]
-            else:
-                # need to check what gpu mem and swap space ought to be set to.. 
-                local_cache_config = CacheConfig(block_size = 16,
-                              cache_dtype = "auto",
-                              sliding_window = [-WINDOW_SIZE,0],
-                              gpu_memory_utilization = 0.95,
-                              swap_space = 0)
-                
-            # Dima: I hope these two attentions don't double our memory requirement
-            self.attn_local = Attention(self.num_heads,
-                              self.head_dim,
-                              self.scaling,
-                              num_kv_heads=self.num_kv_heads,
-                              cache_config=local_cache_config, # Dima
-                              quant_config=quant_config)
-            
-            self.attn_group = Attention(self.num_heads,
-                              self.head_dim,
-                              self.scaling,
-                              num_kv_heads=self.num_kv_heads,
-                              cache_config=cache_config,
-                              quant_config=quant_config)
-            
-        else:
-            logger.info(f'using regular full attention')
-            self.attn = Attention(self.num_heads,
-                              self.head_dim,
-                              self.scaling,
-                              num_kv_heads=self.num_kv_heads,
-                              cache_config=cache_config,
-                              quant_config=quant_config,
-                              prefix=f"{prefix}.attn")
+        # if GROUP_SIZE and WINDOW_SIZE:
+        #     logger.info(f'using a combination of local and group attention')
+        #     # does scaling need to be applied equally to local and group attention?
+        #     # maybe yes because we are mixing the scores ?
+        # 
+        #     if cache_config is not None:
+        #         logger.info(f'cache_config: {cache_config}')
+        #         local_cache_config = copy.deepcopy(cache_config)
+        #         cache_config.sliding_window = [-WINDOW_SIZE,0]
+        #     else:
+        #         # need to check what gpu mem and swap space ought to be set to.. 
+        #         local_cache_config = CacheConfig(block_size = 16,
+        #                       cache_dtype = "auto",
+        #                       sliding_window = [-WINDOW_SIZE,0],
+        #                       gpu_memory_utilization = 0.95,
+        #                       swap_space = 0)
+        #         
+        #     # Dima: I hope these two attentions don't double our memory requirement
+        #     self.attn_local = Attention(self.num_heads,
+        #                       self.head_dim,
+        #                       self.scaling,
+        #                       num_kv_heads=self.num_kv_heads,
+        #                       cache_config=local_cache_config, # Dima
+        #                       quant_config=quant_config)
+        #     
+        #     self.attn_group = Attention(self.num_heads,
+        #                       self.head_dim,
+        #                       self.scaling,
+        #                       num_kv_heads=self.num_kv_heads,
+        #                       cache_config=cache_config,
+        #                       quant_config=quant_config)
+        #     
+        # else:
+        #     logger.info(f'using regular full attention')
+        self.attn = Attention(self.num_heads,
+                          self.head_dim,
+                          self.scaling,
+                          num_kv_heads=self.num_kv_heads,
+                          cache_config=cache_config,
+                          quant_config=quant_config,
+                          prefix=f"{prefix}.attn")
 
     def forward(
         self,
@@ -331,26 +347,46 @@ class NemotronAttention(nn.Module):
 
             # logger.info(f'attn_output: {attn_output.shape}')           
         # else:
-        if True:
-            q, k = self.rotary_emb(positions, q, k)
-            if q is not None:
-               logger.info(f'q: {q.shape}')
-            if k is not None:
-               logger.info(f'k: {k.shape}')
-            # if v is not None:
-            #    logger.info(f'v: {v.shape}')
-            # if kv_cache is not None:
-            #    logger.info(f'kv_cache: {kv_cache.shape}')
-            # if positions is not None:
-            #    logger.info(f'positions: {positions.shape}')
-            # if attn_metadata is not None:
-            #    logger.info(f'attn_metadata: {attn_metadata}')
+        q = self.apply_mscale_if_needed(q, positions, MSCALE)
+ 
+        q, k = self.rotary_emb(positions, q, k)
+        if q is not None:
+            logger.info(f'q: {q.shape}')
+        if k is not None:
+            logger.info(f'k: {k.shape}')
+
+
+        # if v is not None:
+        #    logger.info(f'v: {v.shape}')
+        # if kv_cache is not None:
+        #    logger.info(f'kv_cache: {kv_cache.shape}')
+        # if positions is not None:
+        #    logger.info(f'positions: {positions.shape}')
+        # if attn_metadata is not None:
+        #    logger.info(f'attn_metadata: {attn_metadata}')
                     
-            # logger.info(f'q: {q.shape}, k: {k.shape}, v: {v.shape}, kv_cache: {kv_cache.shape}, positions: {positions.shape}, attn_metadata: {attn_metadata}')
-            attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
-            # logger.info(f'attn_output: {attn_output.shape}')
+        # logger.info(f'q: {q.shape}, k: {k.shape}, v: {v.shape}, kv_cache: {kv_cache.shape}, positions: {positions.shape}, attn_metadata: {attn_metadata}')
+        attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
+        # logger.info(f'attn_output: {attn_output.shape}')
         output, _ = self.o_proj(attn_output)
         return output
+    
+    def apply_mscale_if_needed(q, positions, mscale) -> torch.Tensor:
+        if mscale is None:
+            return q
+        
+        if isinstance(mscale, float): 
+            # position - independent scaling factor
+            logger.info(f'applying static MSCALE: {mscale}')
+            return q * mscale 
+        else: # mscale is a formula
+            logger.info(f'positions shape: {positions.shape}')
+            mscale_multiplier = mscale(positions)
+            mscale_multiplier = mscale_multiplier[-q.shape[0]:, ...]
+            return q * mscale_multiplier
+
+        return q
+
 
 
 class NemotronDecoderLayer(nn.Module):

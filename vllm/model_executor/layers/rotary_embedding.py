@@ -29,7 +29,8 @@ import torch.nn as nn
 from vllm.model_executor.custom_op import CustomOp
 
 import os, json
-import logging
+from vllm.logger import init_logger
+logger = init_logger(__name__)
 
 
 def _rotate_neox(x: torch.Tensor) -> torch.Tensor:
@@ -102,9 +103,9 @@ class RotaryEmbedding(CustomOp):
         # instead of applying to query only, we sqrt and apply to both.
         ## print(f'using mscale: {self.mscale}')
         ## self.mscale = math.sqrt(self.mscale)
-        logging.warning(f'rotary base: {base}')
-        logging.warning(f'head size: {head_size}')
-        logging.warning(f'rotary_dim: {rotary_dim}')
+        logger.info(f'rotary base: {base}')
+        logger.info(f'head size: {head_size}')
+        logger.info(f'rotary_dim: {rotary_dim}')
 
         cache = self._compute_cos_sin_cache()
         cache = cache.to(dtype)
@@ -120,15 +121,22 @@ class RotaryEmbedding(CustomOp):
 
         # Dima: get them from env if avail
         lambdas = os.getenv('WAVELENGTHS')
-        logging.warning(f'wavelengths: {lambdas}')
-        if lambdas:
+        logger.info(f'wavelengths: {lambdas}')
+        try:
             lambdas = json.loads(lambdas)
+        except ValueError:
+             logger.warning(f'unable to parse wavelengths: {lambdas}, setting to none')
+             lambdas = None
+
+        if lambdas:
             wavelengths = torch.tensor(lambdas, dtype=torch.float, device=torch.cuda.current_device())
             inv_freq = 2 * math.pi / wavelengths
-            logging.warning(f'using passed in wavelengths {lambdas}')
+            logger.info(f'using passed in wavelengths {lambdas}')
         else:
             inv_freq = 1.0 / (base**(torch.arange(
                 0, self.rotary_dim, 2, dtype=torch.float) / self.rotary_dim))
+            lambdas = (2 * math.pi / inv_freq).cpu().tolist()
+            logger.info(f'computed wavelengths are: {lambdas}')
         return inv_freq
 
     def _compute_cos_sin_cache(self) -> torch.Tensor:
@@ -161,10 +169,10 @@ class RotaryEmbedding(CustomOp):
         cos_sin = self.cos_sin_cache.index_select(0, positions)
         cos, sin = cos_sin.chunk(2, dim=-1)
 
-        logging.warning(f'rope: positions shape: {positions.shape}')
+        logger.warning(f'rope: positions shape: {positions.shape}')
 
         query_shape = query.shape
-        logging.warning(f'rope: query shape: {query_shape}')
+        # logger.info(f'rope: query shape: {query_shape}')
         query = query.view(num_tokens, -1, self.head_size)
         query_rot = query[..., :self.rotary_dim]
         query_pass = query[..., self.rotary_dim:]
@@ -172,7 +180,7 @@ class RotaryEmbedding(CustomOp):
         query = torch.cat((query_rot, query_pass), dim=-1).reshape(query_shape)
 
         key_shape = key.shape
-        logging.warning(f'rope: key shape: {key_shape}')
+        # logger.info(f'rope: key shape: {key_shape}')
         key = key.view(num_tokens, -1, self.head_size)
         key_rot = key[..., :self.rotary_dim]
         key_pass = key[..., self.rotary_dim:]
@@ -193,22 +201,22 @@ class RotaryEmbedding(CustomOp):
                                                    dtype=query.dtype)
         # ops.rotary_embedding()/batched_rotary_embedding()
         # are in-place operations that update the query and key tensors.
-        logging.warning(f'rope forward_cuda: positions shape: {positions.shape}')
-        logging.warning(f'rope forward_cuda: key shape: {key.shape}')
-        logging.warning(f'rope forward_cuda: query shape: {query.shape}')
-        logging.warning(f'offsets: {offsets}')
+        # logger.info(f'rope forward_cuda: positions shape: {positions.shape}')
+        # logger.info(f'rope forward_cuda: key shape: {key.shape}')
+        # logger.info(f'rope forward_cuda: query shape: {query.shape}')
+        # logger.info(f'offsets: {offsets}')
         # p = positions.cpu()
-        # logging.warning(f'positions[0] shape: {positions[0].shape}')
-        # logging.warning(f'positions[1] shape: {positions[1].shape}')
+        # logger.info(f'positions[0] shape: {positions[0].shape}')
+        # logger.info(f'positions[1] shape: {positions[1].shape}')
         if offsets is not None:
-            logging.warning(f'offsets shape: {offsets.shape}')
+            # logger.info(f'offsets shape: {offsets.shape}')
             ops.batched_rotary_embedding(positions, query, key, self.head_size,
                                          self.cos_sin_cache,
                                          self.is_neox_style, self.rotary_dim,
                                          offsets)
         else:
-            # logging.warning(f'offsets is None')
-            # logging.warning(f'positions: {positions}')
+            # logger.info(f'offsets is None')
+            # logger.info(f'positions: {positions}')
             ops.rotary_embedding(positions, query, key, self.head_size,
                                  self.cos_sin_cache, self.is_neox_style)
         return query, key
