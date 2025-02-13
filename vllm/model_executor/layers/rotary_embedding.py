@@ -124,12 +124,13 @@ class RotaryEmbedding(CustomOp):
 
         # Dima: get them from env if avail
         lambdas = os.getenv('WAVELENGTHS')
-        logger.info(f'wavelengths: {lambdas}')
-        try:
-            lambdas = json.loads(lambdas)
-        except ValueError:
-             logger.warning(f'unable to parse wavelengths: {lambdas}, setting to none')
-             lambdas = None
+        if lambdas:
+            logger.info(f'wavelengths: {lambdas}')
+            try:
+                lambdas = json.loads(lambdas)
+            except ValueError:
+                logger.warning(f'unable to parse wavelengths: {lambdas}, setting to none')
+                lambdas = None
 
         if lambdas:
             wavelengths = torch.tensor(lambdas, dtype=torch.float, device=torch.cuda.current_device())
