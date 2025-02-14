@@ -349,7 +349,7 @@ class NemotronAttention(nn.Module):
 
             # logger.info(f'attn_output: {attn_output.shape}')           
         # else:
-        q = self.apply_mscale_if_needed(q, positions, MSCALE)
+        q = self.apply_mscale_if_needed(q, k, positions, MSCALE)
  
         q, k = self.rotary_emb(positions, q, k)
         # if q is not None:
@@ -373,19 +373,19 @@ class NemotronAttention(nn.Module):
         output, _ = self.o_proj(attn_output)
         return output
     
-    def apply_mscale_if_needed(self, q, positions, mscale) -> torch.Tensor:
+    def apply_mscale_if_needed(self, q, k, positions, mscale) -> torch.Tensor:
         if mscale is None:
             return q
         
         if isinstance(mscale, float): 
             # position - independent scaling factor
-            logger.info(f'applying static MSCALE: {mscale}, q shape: {q.shape}, positions shape: {positions.shape}')
+            logger.info(f'applying static MSCALE: {mscale}, q shape: {q.shape}, k shape: {k.shape}, positions shape: {positions.shape}')
             # if positions.numel() == 1: 
             #     logger.info(f'positions: {positions.cpu().item()}')
 
             return q * mscale 
         else: # mscale is a formula
-            logger.info(f'positions shape: {positions.shape}')
+            logger.info(f'applying dynamic MSCALE: {mscale}, q shape: {q.shape}, k shape: {k.shape}, positions shape: {positions.shape}')
             mscale_multiplier = mscale(positions)
             mscale_multiplier = mscale_multiplier[-q.shape[0]:, ...]
             return q * mscale_multiplier
