@@ -67,6 +67,7 @@ from vllm.logger import init_logger
 logger = init_logger(__name__)
 
 from sympy import sympify, lambdify
+from sympy.core.sympify import SympifyError
 
 # https://github.com/datamllab/LongLM stuff
 GROUP_SIZE =  os.getenv('GROUP_SIZE')
