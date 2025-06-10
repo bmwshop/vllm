@@ -96,15 +96,16 @@ if MSCALE:
         MSCALE = float(MSCALE)
         logger.info(f'MSCALE parsed as a float: {MSCALE}')
     except ValueError:   
-        try:
-            MSCALE = sympify(MSCALE)
-            logger.info(f'MSCALE parsed as a sympy formula: {MSCALE}')
-        except SympifyError:
-            logger.error(f'invalid formula {MSCALE}, setting to None')
-            MSCALE = None
-        except Exception as e:
-            logger.info(f'failed to parse MSCALE: {MSCALE}, setting to None')
-            MSCALE = None
+        logger.info(f'MSCALE is not a float: {MSCALE}')
+#         try:
+#             MSCALE = sympify(MSCALE)
+#             logger.info(f'MSCALE parsed as a sympy formula: {MSCALE}')
+#         except SympifyError:
+#             logger.error(f'invalid formula {MSCALE}, setting to None')
+#             MSCALE = None
+#         except Exception as e:
+#             logger.info(f'failed to parse MSCALE: {MSCALE}, setting to None')
+#             MSCALE = None
 
 # The architecture is pretty similar to Llama, with these changes:
 # - There is no gate_proj, just up_proj
@@ -387,9 +388,20 @@ class NemotronAttention(nn.Module):
             return q * mscale 
         else: # mscale is a formula
             logger.info(f'applying dynamic MSCALE: {mscale}, q shape: {q.shape}, k shape: {k.shape}, positions shape: {positions.shape}')
-            mscale_multiplier = mscale(positions)
-            mscale_multiplier = mscale_multiplier[-q.shape[0]:, ...]
-            return q * mscale_multiplier
+            assert mscale == "log", f"mscale not supported: {mscale}"
+            DYNAMIC_SF = 1.0
+            # mscale_multiplier = mscale(positions)
+            # mscale_multiplier = mscale_multiplier[-q.shape[0]:, ...]
+            # return q * mscale_multiplier
+
+            pos = torch.arange(1, q.shape[0] + 1, dtype=q.dtype, device=q.device)
+            sf = torch.ones_like(pos)
+            sf[1:] = DYNAMIC_SF * torch.log(pos[1:].float())
+
+            mscale_multiplier = sf.unsqueeze(1)
+            q = q * mscale_multiplier
+
+            return q
 
         return q
 
