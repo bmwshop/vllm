@@ -25,6 +25,7 @@
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
+import math
 from torch import nn
 
 from vllm.attention import Attention, AttentionMetadata
@@ -406,7 +407,8 @@ class NemotronAttention(nn.Module):
             elif mscale.startswith("log"):
                 base = float(mscale[3:])
                 pos = torch.arange(0, q.shape[0], dtype=compute_dtype, device=q.device)
-                log_base = torch.log(torch.tensor(base, dtype=compute_dtype, device=q.device))
+                # log_base = torch.log(torch.tensor(base, dtype=compute_dtype, device=q.device))
+                log_base = math.log(base)
                 sf = torch.log(base + pos) / log_base
 
             else:
