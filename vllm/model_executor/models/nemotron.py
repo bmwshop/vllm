@@ -386,40 +386,43 @@ class NemotronAttention(nn.Module):
             #     logger.info(f'positions: {positions.cpu().item()}')
 
             return q * mscale 
-        else: # mscale is a formula
-            logger.info(f'applying dynamic MSCALE: {mscale}, q shape: {q.shape}, k shape: {k.shape}, positions shape: {positions.shape}')
+
+        # mscale is a formula
+        logger.info(f'applying dynamic MSCALE: {mscale}, q shape: {q.shape}, k shape: {k.shape}, positions shape: {positions.shape}')
+        mscale = mscale.strip().lower()
+        compute_dtype = torch.float32
+
+        try:
             # assert mscale == "log", f"mscale not supported: {mscale}"
             # DYNAMIC_SF = 1.0
             # mscale_multiplier = mscale(positions)
             # mscale_multiplier = mscale_multiplier[-q.shape[0]:, ...]
             # return q * mscale_multiplier
-
-            mscale = mscale.strip().lower()
-
             if mscale == "log":
-                pos = torch.arange(1, q.shape[0] + 1, dtype=q.dtype, device=q.device)
+                pos = torch.arange(1, q.shape[0] + 1, dtype=compute_dtype, device=q.device)
                 sf = torch.ones_like(pos)
-                sf[1:] = torch.log(pos[1:].float())
+                sf[1:] = torch.log(pos[1:])
+
             elif mscale.startswith("log"):
-                try:
-                    base = float(mscale[3:])
-                    pos = torch.arange(0, q.shape[0], dtype=q.dtype, device=q.device)
-                    log_base = torch.log(torch.tensor(base, dtype=q.dtype, device=q.device))
-                    sf = torch.log(base + pos.float()) / log_base
-                except ValueError:
-                    logger.warning(f"mscale formula not supported: {mscale}, falling back to no scaling.")
-                    sf = torch.ones(q.shape[0], dtype=q.dtype, device=q.device)
+                base = float(mscale[3:])
+                pos = torch.arange(0, q.shape[0], dtype=compute_dtype, device=q.device)
+                log_base = torch.log(torch.tensor(base, dtype=compute_dtype, device=q.device))
+                sf = torch.log(base + pos) / log_base
 
             else:
                 logger.warning(f"mscale formula not supported: {mscale}, falling back to no scaling.")
-                sf = torch.ones(q.shape[0], dtype=q.dtype, device=q.device)
+                sf = torch.ones(q.shape[0], dtype=compute_dtype, device=q.device)
                
 
-            mscale_multiplier = sf.unsqueeze(1)
+        except (ValueError, TypeError) as e:
+            logger.warning(f"mscale parsing failed: {e}, falling back to no scaling.")
+            sf = torch.ones(q.shape[0], dtype=compute_dtype, device=q.device)
 
-            return q * mscale_multiplier
+        sf = sf.to(dtype=q.dtype)
+        mscale_multiplier = sf.unsqueeze(1)
 
-        return q
+        return q * mscale_multiplier
+
 
 
 
